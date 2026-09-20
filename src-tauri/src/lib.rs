@@ -20,6 +20,7 @@ mod win;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 struct Settings {
+    schema_version: u8,
     enabled: bool,
     shortcut: String,
     use_system_accent: bool,
@@ -34,6 +35,7 @@ struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            schema_version: 2,
             enabled: true,
             shortcut: "super+ctrl+t".into(),
             use_system_accent: true,
@@ -114,10 +116,26 @@ struct SharedState {
 type Shared = Arc<SharedState>;
 
 fn load_settings(path: &PathBuf) -> Settings {
-    fs::read_to_string(path)
+    let Ok(raw) = fs::read_to_string(path) else {
+        return Settings::default();
+    };
+
+    let had_schema_version = serde_json::from_str::<serde_json::Value>(&raw)
         .ok()
-        .and_then(|raw| serde_json::from_str::<Settings>(&raw).ok())
-        .unwrap_or_default()
+        .and_then(|value| value.get("schema_version").cloned())
+        .is_some();
+
+    let mut settings = serde_json::from_str::<Settings>(&raw).unwrap_or_default();
+
+    // One-time migration from the first Tauri preview. Some test builds stored
+    // a temporary low window-opacity value. New installs and migrated installs
+    // start future pins at 100%, while any user choice made after migration is kept.
+    if !had_schema_version {
+        settings.schema_version = 2;
+        settings.default_window_opacity = 100;
+    }
+
+    settings
 }
 
 fn save_settings(shared: &Shared) -> Result<(), String> {

@@ -3,10 +3,12 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import {
+  AppWindow,
   Ban,
   BellRing,
   ChevronRight,
   CircleDot,
+  Copy,
   Eye,
   Gauge,
   Minus,
@@ -16,6 +18,7 @@ import {
   RotateCcw,
   Settings2,
   Sparkles,
+  Square,
   Volume2,
   VolumeX,
   X,
@@ -52,6 +55,20 @@ function humanizeShortcut(value: string) {
       return part.length === 1 ? part.toUpperCase() : part;
     })
     .join(' + ');
+}
+
+function ShortcutKeys({ value }: { value: string }) {
+  const parts = humanizeShortcut(value).split(' + ');
+  return (
+    <div className="shortcut-keys" aria-label={humanizeShortcut(value)}>
+      {parts.map((part, index) => (
+        <span className="shortcut-key-wrap" key={`${part}-${index}`}>
+          <kbd>{part}</kbd>
+          {index < parts.length - 1 && <span className="shortcut-plus">+</span>}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 function buildShortcut(e: KeyboardEvent): string | null {
@@ -113,6 +130,7 @@ function Slider({ value, min, max, step = 1, onChange, unit = '%' }: {
 export default function App() {
   const [snapshot, setSnapshot] = useState<AppSnapshot>(EMPTY);
   const [loading, setLoading] = useState(true);
+  const [isMaximized, setIsMaximized] = useState(false);
   const [recordingShortcut, setRecordingShortcut] = useState(false);
   const [draftExclusion, setDraftExclusion] = useState('');
   const [toast, setToast] = useState<string>('');
@@ -137,10 +155,37 @@ export default function App() {
     window.setTimeout(() => setToast(''), 2600);
   }, []);
 
+  const toggleMaximize = useCallback(async () => {
+    try {
+      await windowRef.toggleMaximize();
+      setIsMaximized(await windowRef.isMaximized());
+    } catch (err) {
+      showToast(String(err));
+    }
+  }, [showToast]);
+
   const playFeedback = useCallback((kind: 'pin' | 'unpin') => {
     const audio = new Audio(kind === 'pin' ? '/sounds/pin.wav' : '/sounds/unpin.wav');
     audio.volume = 0.55;
     void audio.play().catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    const syncMaximized = async () => {
+      try {
+        const value = await windowRef.isMaximized();
+        if (!disposed) setIsMaximized(value);
+      } catch {
+        // Window state sync is non-critical.
+      }
+    };
+    void syncMaximized();
+    const resizeListener = windowRef.onResized(() => void syncMaximized());
+    return () => {
+      disposed = true;
+      void resizeListener.then((f) => f());
+    };
   }, []);
 
   useEffect(() => {
@@ -221,20 +266,35 @@ export default function App() {
   }
 
   return (
-    <div className="app-shell">
-      <header className="titlebar" data-tauri-drag-region>
+    <div className={`app-shell ${isMaximized ? 'is-maximized' : ''}`}>
+      <header
+        className="titlebar"
+        data-tauri-drag-region
+        onDoubleClick={(event) => {
+          const target = event.target as HTMLElement;
+          if (!target.closest('.window-actions')) void toggleMaximize();
+        }}
+      >
         <div className="brand" data-tauri-drag-region>
           <div className="brand-mark"><Pin size={17} strokeWidth={2.4} /></div>
           <span data-tauri-drag-region>Always On Top</span>
           <span className="version">v1.0</span>
         </div>
         <div className="window-actions">
-          <button onClick={() => void windowRef.minimize()} aria-label="Minimize"><Minus size={15} /></button>
-          <button className="close" onClick={() => void windowRef.close()} aria-label="Close"><X size={16} /></button>
+          <button onClick={() => void windowRef.minimize()} aria-label="Minimize" title="Minimize"><Minus size={15} /></button>
+          <button
+            onClick={() => void toggleMaximize()}
+            aria-label={isMaximized ? 'Restore down' : 'Maximize'}
+            title={isMaximized ? 'Restore down' : 'Maximize'}
+          >
+            {isMaximized ? <Copy size={13} strokeWidth={1.8} /> : <Square size={12} strokeWidth={1.8} />}
+          </button>
+          <button className="close" onClick={() => void windowRef.close()} aria-label="Close" title="Close"><X size={16} /></button>
         </div>
       </header>
 
       <main className="content">
+        <div className="content-inner">
         <section className="hero">
           <div>
             <div className="eyebrow"><Sparkles size={14} /> Native pinning, polished control</div>
@@ -259,7 +319,10 @@ export default function App() {
 
           <article className="glass-card shortcut-card">
             <div className="section-heading compact">
-              <div><span className="kicker">Shortcut</span><strong>{recordingShortcut ? 'Press your shortcut…' : humanizeShortcut(snapshot.settings.shortcut)}</strong></div>
+              <div className="shortcut-copy">
+                <span className="kicker">Shortcut</span>
+                {recordingShortcut ? <strong className="recording-label">Press your shortcut…</strong> : <ShortcutKeys value={snapshot.settings.shortcut} />}
+              </div>
               <button className={`soft-button ${recordingShortcut ? 'recording' : ''}`} onClick={() => setRecordingShortcut((v) => !v)}>
                 {recordingShortcut ? 'Esc to cancel' : 'Change'}
               </button>
@@ -375,7 +438,7 @@ export default function App() {
             <div className="setting-row">
               <div className="sound-copy">
                 <div className="mini-icon">{snapshot.settings.sound_enabled ? <Volume2 size={17} /> : <VolumeX size={17} />}</div>
-                <div><strong>Pin sound</strong><span>Short custom chime when a window is pinned</span></div>
+                <div className="sound-copy-text"><strong>Pin sound</strong><span>Short custom chime when a window is pinned</span></div>
               </div>
               <div className="inline-actions">
                 <button className="soft-button" onClick={previewSound}><BellRing size={15} /> Preview</button>
@@ -395,22 +458,27 @@ export default function App() {
               <button onClick={() => void addExclusion()} aria-label="Add exclusion"><Plus size={17} /></button>
             </div>
 
-            <div className="chip-list">
+            <div className="exclusion-list">
               {snapshot.settings.exclusions.length === 0 ? (
                 <div className="empty-inline"><Ban size={15} /> No excluded apps</div>
               ) : snapshot.settings.exclusions.map((exe) => (
-                <button className="app-chip" key={exe} onClick={() => void invoke('remove_exclusion', { exe }).then(refresh)} title="Remove exclusion">
-                  {exe}<X size={13} />
-                </button>
+                <div className="exclusion-item" key={exe}>
+                  <div className="exclusion-app-icon"><AppWindow size={16} /></div>
+                  <div className="exclusion-name"><strong>{exe}</strong><span>Excluded from pinning</span></div>
+                  <button className="icon-button danger-soft" onClick={() => void invoke('remove_exclusion', { exe }).then(refresh)} title={`Remove ${exe}`} aria-label={`Remove ${exe}`}>
+                    <X size={15} />
+                  </button>
+                </div>
               ))}
             </div>
           </article>
         </section>
 
-        <footer>
+        <footer className="glass-card app-footer">
           <div><span className="live-dot" /> Running in the notification area</div>
           <button className="text-button" onClick={() => void invoke('reset_settings').then(refresh)}><RotateCcw size={14} /> Reset settings</button>
         </footer>
+        </div>
       </main>
 
       {toast && <div className="toast"><ChevronRight size={15} />{toast}</div>}
