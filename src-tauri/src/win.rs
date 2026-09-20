@@ -12,7 +12,7 @@ use windows_sys::Win32::{
     Foundation::{CloseHandle, HWND, LPARAM, LRESULT, RECT, WPARAM},
     Graphics::{
         Dwm::{DwmGetColorizationColor, DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS},
-        Gdi::{BeginPaint, CreateSolidBrush, DeleteObject, EndPaint, FillRect, PAINTSTRUCT},
+        Gdi::{BeginPaint, CreateSolidBrush, DeleteObject, EndPaint, FillRect, InvalidateRect, PAINTSTRUCT},
     },
     System::{
         LibraryLoader::GetModuleHandleW,
@@ -21,7 +21,7 @@ use windows_sys::Win32::{
     UI::WindowsAndMessaging::{
         CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetForegroundWindow,
         GetLayeredWindowAttributes, GetWindowLongPtrW, GetWindowRect, GetWindowTextLengthW,
-        GetWindowTextW, GetWindowThreadProcessId, InvalidateRect, IsIconic, IsWindow, IsWindowVisible,
+        GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindow, IsWindowVisible,
         LoadCursorW, PeekMessageW, RegisterClassW, SetLayeredWindowAttributes, SetWindowLongPtrW,
         SetWindowPos, ShowWindow, TranslateMessage, DispatchMessageW, CS_HREDRAW, CS_VREDRAW,
         GWL_EXSTYLE, GWLP_USERDATA, HTTRANSPARENT, HWND_NOTOPMOST, HWND_TOPMOST, IDC_ARROW,
@@ -239,7 +239,7 @@ impl BorderWindows {
 }
 
 unsafe fn create_border_windows(class_name: *const u16, color: u32, alpha: u8) -> Option<BorderWindows> {
-    let mut hwnds = [null_mut(); 4];
+    let mut hwnds: [HWND; 4] = [null_mut(); 4];
     for slot in &mut hwnds {
         let hwnd = CreateWindowExW(
             WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_TOPMOST,
@@ -275,7 +275,7 @@ unsafe fn target_rect(hwnd: HWND) -> Option<RECT> {
     let mut rect: RECT = zeroed();
     let hr = DwmGetWindowAttribute(
         hwnd,
-        DWMWA_EXTENDED_FRAME_BOUNDS,
+        DWMWA_EXTENDED_FRAME_BOUNDS as u32,
         &mut rect as *mut RECT as *mut c_void,
         size_of::<RECT>() as u32,
     );

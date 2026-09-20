@@ -340,7 +340,7 @@ fn unpin_all_internal(app: &AppHandle, shared: &Shared, feedback: bool) {
 }
 
 #[cfg(target_os = "windows")]
-fn register_shortcut(app: &AppHandle, shared: &Shared, shortcut: &str) -> Result<(), String> {
+fn register_shortcut(app: &AppHandle, _shared: &Shared, shortcut: &str) -> Result<(), String> {
     app.global_shortcut()
         .on_shortcut(shortcut, move |app, _shortcut, event| {
             if event.state != ShortcutState::Pressed {
@@ -383,7 +383,7 @@ fn set_shortcut(app: AppHandle, shared: State<'_, Shared>, shortcut: String) -> 
     #[cfg(target_os = "windows")]
     {
         let old = shared.settings.lock().map_err(|_| "Settings lock failed")?.shortcut.clone();
-        app.global_shortcut().unregister(&old).ok();
+        app.global_shortcut().unregister(old.as_str()).ok();
         if let Err(err) = register_shortcut(&app, &shared, &normalized) {
             let _ = register_shortcut(&app, &shared, &old);
             return Err(err);
@@ -538,7 +538,7 @@ fn reset_settings(app: AppHandle, shared: State<'_, Shared>) -> Result<(), Strin
     let defaults = Settings::default();
     #[cfg(target_os = "windows")]
     {
-        app.global_shortcut().unregister(&old_shortcut).ok();
+        app.global_shortcut().unregister(old_shortcut.as_str()).ok();
         register_shortcut(&app, &shared, &defaults.shortcut)?;
     }
     *shared.settings.lock().map_err(|_| "Settings lock failed")? = defaults;
