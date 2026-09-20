@@ -2,20 +2,12 @@
 
 ## 1.0.0
 
-- Standalone native Windows always-on-top utility.
-- Global pin / unpin shortcut with a full custom shortcut recorder.
-- Multiple simultaneously pinned windows.
-- Modern compact glass-inspired settings interface.
-- Windows accent-color border option plus custom color picker.
-- Configurable border thickness and opacity.
-- Excluded-app manager with "Add active app" support.
-- Optional sound feedback.
-- Notification-area controls and clear-all action.
-- Persistent per-user settings.
-- High-DPI awareness and Windows 11 rounded/Mica window treatment where supported.
-
-### Fixes
-- Fixed border opacity so changes are applied with true per-pixel alpha.
-- Opacity now supports the full 0–100% range.
-- Fixed excluded-app handling and Add active app targeting.
-- Adding an exclusion now immediately unpins matching windows.
+- Rebuilt the interface using Tauri 2, React and TypeScript.
+- Added Windows Mica/glass styling and dark-mode support.
+- Added fully custom global hotkey recording.
+- Added Windows accent color and custom border color controls.
+- Added border thickness and true border-opacity controls.
+- Added default pinned-window opacity and per-window opacity controls.
+- Added excluded-app manager with active-app detection.
+- Added original pin and unpin notification sounds plus preview toggle.
+- Added system tray controls and settings persistence.

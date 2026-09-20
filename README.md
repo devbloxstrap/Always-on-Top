@@ -1,80 +1,49 @@
 # Always On Top
 
-A lightweight standalone Windows utility for pinning any window above all other windows.
+A polished standalone Windows utility for pinning any window above all others — without installing the full PowerToys suite.
 
-Press **Win + Ctrl + T** by default to toggle the currently active window between normal and always-on-top states. The shortcut can be replaced with your own key combination directly in the app.
+## Highlights
 
-## Features
-
-- Global always-on-top hotkey
-- Full custom hotkey recorder
-- Multiple pinned windows at once
-- Smooth configurable border around pinned windows
-- Windows accent-color border option
-- Custom border color picker
-- Border thickness and opacity controls
-- Excluded-app list with quick "Add active app"
-- Optional sound feedback
+- Global custom shortcut (default: **Win + Ctrl + T**)
+- Pin multiple windows at once
+- Per-window opacity controls
+- Default opacity for newly pinned windows
+- Border color, thickness and opacity controls
+- Windows accent-color support
+- Excluded-app manager with **Add active app**
+- Custom pin and unpin notification sounds
+- Sound preview and on/off toggle
 - System tray controls
-- Persistent per-user settings
-- Modern compact glass-inspired interface with Mica on supported Windows 11 systems
-- High-DPI aware native Windows executable
-- No PowerToys installation or runtime required
+- Modern Tauri 2 + React interface with Windows Mica support
+- Settings persisted per user
 
-## Default shortcut
+## Tech stack
 
-```text
-Win + Ctrl + T
-```
-
-Click the shortcut field inside the app, then press any new key combination. Press **Esc** while recording to cancel.
-
-## Usage
-
-1. Run `AlwaysOnTop.exe`.
-2. Focus the window you want to keep above others.
-3. Press the configured shortcut.
-4. Press the shortcut again to unpin it.
-
-Closing the settings window keeps the utility running in the notification area. Use the tray menu to reopen it or exit.
+- **Tauri 2**
+- **React + TypeScript**
+- **Rust**
+- Native Windows APIs for topmost windows, opacity, process detection and border overlays
 
 ## Build
 
 Requirements:
 
-- Windows 10 or Windows 11
-- Visual Studio 2022 Build Tools with **Desktop development with C++**
-- CMake
+- Node.js 20+
+- Rust stable toolchain
+- Windows build tools / Visual Studio C++ workload
+- WebView2 (normally included with modern Windows)
 
-Build locally:
-
-```bat
-build-msvc.bat
+```powershell
+npm install
+npm run tauri build
 ```
 
-or:
+The portable executable is produced under `src-tauri/target/release/` and installers under `src-tauri/target/release/bundle/`.
 
-```bat
-cmake -S . -B build -A x64
-cmake --build build --config Release
-```
+## Sound design
 
-Output:
-
-```text
-build\Release\AlwaysOnTop.exe
-```
-
-## GitHub Actions
-
-Pushes to `main` build the Windows x64 executable automatically. Manual builds are available through **Actions → Build Windows EXE → Run workflow**.
-
-## Relationship to Microsoft PowerToys
-
-This repository is an independent standalone implementation of always-on-top functionality. It does not require or bundle the PowerToys runner, settings application, telemetry, or shared PowerToys components.
-
-Microsoft PowerToys is an open-source Microsoft project. This project is not affiliated with or endorsed by Microsoft.
+`public/sounds/pin.wav` and `public/sounds/unpin.wav` are original short notification cues created for this project. The pin cue uses a soft tactile transient with a short rising glass-like chime; the unpin cue is a quieter descending release sound.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT.
