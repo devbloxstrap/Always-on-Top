@@ -86,6 +86,7 @@ HFONT g_fontSmall = nullptr;
 HFONT g_fontTiny = nullptr;
 ULONG_PTR g_gdiplusToken = 0;
 UINT g_taskbarCreated = 0;
+HWINEVENTHOOK g_foregroundHook = nullptr;
 
 bool g_enabled = true;
 bool g_sound = true;
@@ -102,6 +103,7 @@ int g_borderOpacity = 88;
 std::vector<std::wstring> g_excludedApps;
 std::vector<PinnedWindow> g_pinned;
 HWND g_lastExternalWindow = nullptr;
+HWND g_exclusionCandidate = nullptr;
 std::wstring g_noticeText;
 ULONGLONG g_noticeUntil = 0;
 
@@ -361,7 +363,7 @@ COLORREF EffectiveBorderColor()
 
 BYTE BorderAlpha()
 {
-    return static_cast<BYTE>(std::clamp(MulDiv(g_borderOpacity, 255, 100), 1, 255));
+    return static_cast<BYTE>(std::clamp(MulDiv(g_borderOpacity, 255, 100), 0, 255));
 }
 
 std::wstring KeyName(UINT vk)
@@ -473,7 +475,7 @@ void LoadSettings()
     if (ReadDword(key, L"BorderThickness", v) && (v == 1 || v == 2 || v == 3 || v == 4 || v == 6 || v == 8)) {
         g_borderThickness = static_cast<int>(v);
     }
-    if (ReadDword(key, L"BorderOpacity", v)) g_borderOpacity = std::clamp(static_cast<int>(v), 20, 100);
+    if (ReadDword(key, L"BorderOpacity", v)) g_borderOpacity = std::clamp(static_cast<int>(v), 0, 100);
     ReadExcludedApps(key);
     RegCloseKey(key);
 }
@@ -523,10 +525,7 @@ LRESULT CALLBACK BorderProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         case WM_ERASEBKGND: return 1;
         case WM_PAINT: {
             PAINTSTRUCT ps{};
-            HDC dc = BeginPaint(hwnd, &ps);
-            RECT client{};
-            GetClientRect(hwnd, &client);
-            FillSolid(dc, client, EffectiveBorderColor());
+            BeginPaint(hwnd, &ps);
             EndPaint(hwnd, &ps);
             return 0;
         }
@@ -534,14 +533,68 @@ LRESULT CALLBACK BorderProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
+void RenderLayeredBorder(HWND hwnd, int width, int height)
+{
+    if (!hwnd || width <= 0 || height <= 0) return;
+
+    HDC screen = GetDC(nullptr);
+    if (!screen) return;
+    HDC mem = CreateCompatibleDC(screen);
+    if (!mem) {
+        ReleaseDC(nullptr, screen);
+        return;
+    }
+
+    BITMAPINFO bmi{};
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = width;
+    bmi.bmiHeader.biHeight = -height;
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    void* bits = nullptr;
+    HBITMAP bitmap = CreateDIBSection(screen, &bmi, DIB_RGB_COLORS, &bits, nullptr, 0);
+    if (!bitmap || !bits) {
+        if (bitmap) DeleteObject(bitmap);
+        DeleteDC(mem);
+        ReleaseDC(nullptr, screen);
+        return;
+    }
+
+    const COLORREF color = EffectiveBorderColor();
+    const BYTE a = BorderAlpha();
+    const BYTE r = static_cast<BYTE>(MulDiv(GetRValue(color), a, 255));
+    const BYTE g = static_cast<BYTE>(MulDiv(GetGValue(color), a, 255));
+    const BYTE b = static_cast<BYTE>(MulDiv(GetBValue(color), a, 255));
+    const DWORD pixel = (static_cast<DWORD>(a) << 24) |
+                        (static_cast<DWORD>(r) << 16) |
+                        (static_cast<DWORD>(g) << 8) |
+                        static_cast<DWORD>(b);
+    DWORD* pixels = static_cast<DWORD*>(bits);
+    std::fill(pixels, pixels + static_cast<size_t>(width) * static_cast<size_t>(height), pixel);
+
+    HGDIOBJ old = SelectObject(mem, bitmap);
+    RECT wr{};
+    GetWindowRect(hwnd, &wr);
+    POINT dst{wr.left, wr.top};
+    SIZE size{width, height};
+    POINT src{0, 0};
+    BLENDFUNCTION blend{AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+    UpdateLayeredWindow(hwnd, screen, &dst, &size, mem, &src, 0, &blend, ULW_ALPHA);
+
+    SelectObject(mem, old);
+    DeleteObject(bitmap);
+    DeleteDC(mem);
+    ReleaseDC(nullptr, screen);
+}
+
 HWND CreateBorderWindow(HINSTANCE instance)
 {
-    HWND hwnd = CreateWindowExW(
+    return CreateWindowExW(
         WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED | WS_EX_TRANSPARENT,
         kBorderClass, L"", WS_POPUP,
         0, 0, 0, 0, nullptr, nullptr, instance, nullptr);
-    if (hwnd) SetLayeredWindowAttributes(hwnd, 0, BorderAlpha(), LWA_ALPHA);
-    return hwnd;
 }
 
 bool GetVisibleWindowRect(HWND hwnd, RECT& rect)
@@ -562,8 +615,10 @@ void RefreshBorderVisuals()
     for (auto& item : g_pinned) {
         for (HWND border : item.borders) {
             if (!border) continue;
-            SetLayeredWindowAttributes(border, 0, BorderAlpha(), LWA_ALPHA);
-            InvalidateRect(border, nullptr, TRUE);
+            RECT wr{};
+            if (GetWindowRect(border, &wr)) {
+                RenderLayeredBorder(border, std::max(1L, wr.right - wr.left), std::max(1L, wr.bottom - wr.top));
+            }
         }
     }
 }
@@ -588,8 +643,14 @@ void PositionBorders(PinnedWindow& item)
     };
     for (int i = 0; i < 4; ++i) {
         const RECT& e = edges[i];
-        SetWindowPos(item.borders[i], HWND_TOPMOST, e.left, e.top, e.right - e.left, e.bottom - e.top,
+        const int width = std::max(1L, e.right - e.left);
+        const int height = std::max(1L, e.bottom - e.top);
+        RECT current{};
+        const bool hadRect = GetWindowRect(item.borders[i], &current) != FALSE;
+        const bool sizeChanged = !hadRect || (current.right - current.left) != width || (current.bottom - current.top) != height;
+        SetWindowPos(item.borders[i], HWND_TOPMOST, e.left, e.top, width, height,
                      SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        if (sizeChanged) RenderLayeredBorder(item.borders[i], width, height);
     }
 }
 
@@ -627,6 +688,21 @@ void UnpinWindow(HWND hwnd)
             return;
         }
     }
+}
+
+size_t ApplyExclusionsToPinned()
+{
+    size_t removed = 0;
+    for (size_t i = g_pinned.size(); i-- > 0;) {
+        if (IsWindowExcluded(g_pinned[i].target)) {
+            UnpinAt(i);
+            ++removed;
+        }
+    }
+    if (removed > 0 && g_hwnd) {
+        InvalidateRect(g_hwnd, nullptr, FALSE);
+    }
+    return removed;
 }
 
 void PinWindow(HWND hwnd)
@@ -687,6 +763,12 @@ HWND ResolveTargetWindow()
     if (fg && !IsOwnWindow(fg)) return fg;
     if (g_lastExternalWindow && IsWindow(g_lastExternalWindow) && !IsOwnWindow(g_lastExternalWindow)) return g_lastExternalWindow;
     return nullptr;
+}
+
+void CALLBACK ForegroundWinEventProc(HWINEVENTHOOK, DWORD event, HWND hwnd, LONG, LONG, DWORD, DWORD)
+{
+    if (event != EVENT_SYSTEM_FOREGROUND || !hwnd) return;
+    if (!IsOwnWindow(hwnd)) g_lastExternalWindow = hwnd;
 }
 
 bool RegisterConfiguredHotkey()
@@ -823,6 +905,8 @@ void AddTrayIcon()
 
 void ShowMainWindow()
 {
+    HWND fg = GetForegroundWindow();
+    if (fg && !IsOwnWindow(fg)) g_lastExternalWindow = fg;
     ShowWindow(g_hwnd, SW_RESTORE);
     SetForegroundWindow(g_hwnd);
 }
@@ -902,13 +986,20 @@ void RefreshExclusionListControl()
 void AddExclusion(const std::wstring& raw)
 {
     std::wstring value = NormalizeExeName(raw);
-    if (value.empty() || IsExcludedName(value)) return;
+    if (value.empty()) return;
+    if (IsExcludedName(value)) {
+        SetNotice(value + L" is already excluded");
+        return;
+    }
     g_excludedApps.push_back(value);
     std::sort(g_excludedApps.begin(), g_excludedApps.end(), [](const std::wstring& a, const std::wstring& b) {
         return _wcsicmp(a.c_str(), b.c_str()) < 0;
     });
+    const size_t unpinned = ApplyExclusionsToPinned();
     SaveSettings();
+    UpdateTray();
     RefreshExclusionListControl();
+    SetNotice(unpinned > 0 ? (value + L" excluded and unpinned") : (value + L" added to exclusions"));
     InvalidateRect(g_hwnd, nullptr, FALSE);
 }
 
@@ -977,10 +1068,13 @@ LRESULT CALLBACK ExclusionsProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                     return 0;
                 }
                 case IDC_EXCLUSION_ACTIVE: {
-                    HWND target = ResolveTargetWindow();
+                    HWND target = (g_exclusionCandidate && IsWindow(g_exclusionCandidate) && !IsOwnWindow(g_exclusionCandidate))
+                        ? g_exclusionCandidate : ResolveTargetWindow();
                     std::wstring name = GetWindowProcessName(target);
                     if (name.empty()) {
-                        MessageBoxW(hwnd, L"Could not identify the active application's executable name.", kAppName, MB_OK | MB_ICONINFORMATION);
+                        MessageBoxW(hwnd,
+                            L"Could not identify the last active application. Focus the app you want to exclude, then reopen Always On Top and choose Manage > Add active app.",
+                            kAppName, MB_OK | MB_ICONINFORMATION);
                     } else {
                         AddExclusion(name);
                     }
@@ -1020,6 +1114,8 @@ void ShowExclusionsWindow()
         SetForegroundWindow(g_exclusionsHwnd);
         return;
     }
+    HWND candidate = ResolveTargetWindow();
+    if (candidate && !IsOwnWindow(candidate)) g_exclusionCandidate = candidate;
     HINSTANCE instance = reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(g_hwnd, GWLP_HINSTANCE));
     RECT parent{};
     GetWindowRect(g_hwnd, &parent);
@@ -1062,8 +1158,8 @@ void UpdateOpacityFromPoint(int x, bool save)
     const int right = g_opacityRect.right - 4;
     if (right <= left) return;
     const int clampedX = std::clamp(x, left, right);
-    g_borderOpacity = 20 + MulDiv(clampedX - left, 80, right - left);
-    g_borderOpacity = std::clamp(g_borderOpacity, 20, 100);
+    g_borderOpacity = MulDiv(clampedX - left, 100, right - left);
+    g_borderOpacity = std::clamp(g_borderOpacity, 0, 100);
     RefreshBorderVisuals();
     if (save) SaveSettings();
     InvalidateRect(g_hwnd, nullptr, FALSE);
@@ -1412,6 +1508,10 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
         case WM_DESTROY:
             StopHotkeyCapture(false);
+            if (g_foregroundHook) {
+                UnhookWinEvent(g_foregroundHook);
+                g_foregroundHook = nullptr;
+            }
             KillTimer(hwnd, TIMER_TRACK);
             UnregisterHotKey(hwnd, ID_GLOBAL_HOTKEY);
             ClearPinned();
@@ -1514,6 +1614,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int)
         CloseHandle(mutex);
         return 6;
     }
+
+    g_foregroundHook = SetWinEventHook(
+        EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr, ForegroundWinEventProc,
+        0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
 
     ApplyModernWindowVisuals(g_hwnd);
     RegisterConfiguredHotkey();

@@ -13,3 +13,9 @@
 - Notification-area controls and clear-all action.
 - Persistent per-user settings.
 - High-DPI awareness and Windows 11 rounded/Mica window treatment where supported.
+
+### Fixes
+- Fixed border opacity so changes are applied with true per-pixel alpha.
+- Opacity now supports the full 0–100% range.
+- Fixed excluded-app handling and Add active app targeting.
+- Adding an exclusion now immediately unpins matching windows.
