@@ -2,13 +2,14 @@
 
 ## 1.0.0
 
-- Initial standalone release.
-- Global hotkey to pin or unpin the active window.
-- Four configurable hotkey presets.
-- Smooth colored border around pinned windows.
-- Configurable border color and thickness.
+- Standalone native Windows always-on-top utility.
+- Global pin / unpin shortcut with a full custom shortcut recorder.
+- Multiple simultaneously pinned windows.
+- Modern compact glass-inspired settings interface.
+- Windows accent-color border option plus custom color picker.
+- Configurable border thickness and opacity.
+- Excluded-app manager with "Add active app" support.
 - Optional sound feedback.
-- Tray controls and pinned-window count.
+- Notification-area controls and clear-all action.
 - Persistent per-user settings.
-- Modern glass-inspired Windows UI with Mica support on compatible systems.
-- High-DPI aware native x64 executable.
+- High-DPI awareness and Windows 11 rounded/Mica window treatment where supported.

@@ -2,19 +2,22 @@
 
 A lightweight standalone Windows utility for pinning any window above all other windows.
 
-Press **Win + Ctrl + T** by default to toggle the currently active window between normal and always-on-top states. Pinned windows receive a subtle configurable border so they are easy to identify.
+Press **Win + Ctrl + T** by default to toggle the currently active window between normal and always-on-top states. The shortcut can be replaced with your own key combination directly in the app.
 
 ## Features
 
 - Global always-on-top hotkey
-- Smooth border around pinned windows
-- Four built-in hotkey presets
-- Configurable border color and thickness
+- Full custom hotkey recorder
+- Multiple pinned windows at once
+- Smooth configurable border around pinned windows
+- Windows accent-color border option
+- Custom border color picker
+- Border thickness and opacity controls
+- Excluded-app list with quick "Add active app"
 - Optional sound feedback
 - System tray controls
-- Pin multiple windows at once
-- Persistent settings stored per user
-- Modern glass-inspired interface with Mica on supported Windows 11 systems
+- Persistent per-user settings
+- Modern compact glass-inspired interface with Mica on supported Windows 11 systems
 - High-DPI aware native Windows executable
 - No PowerToys installation or runtime required
 
@@ -24,13 +27,13 @@ Press **Win + Ctrl + T** by default to toggle the currently active window betwee
 Win + Ctrl + T
 ```
 
-The shortcut can be changed from the app window to one of the included presets.
+Click the shortcut field inside the app, then press any new key combination. Press **Esc** while recording to cancel.
 
 ## Usage
 
 1. Run `AlwaysOnTop.exe`.
 2. Focus the window you want to keep above others.
-3. Press **Win + Ctrl + T**.
+3. Press the configured shortcut.
 4. Press the shortcut again to unpin it.
 
 Closing the settings window keeps the utility running in the notification area. Use the tray menu to reopen it or exit.
@@ -64,7 +67,7 @@ build\Release\AlwaysOnTop.exe
 
 ## GitHub Actions
 
-Pushes and pull requests to `main` build the Windows x64 executable automatically. Manual builds are also available through **Actions → Build Windows EXE → Run workflow**.
+Pushes to `main` build the Windows x64 executable automatically. Manual builds are available through **Actions → Build Windows EXE → Run workflow**.
 
 ## Relationship to Microsoft PowerToys
 
